@@ -63,9 +63,16 @@
     padding: 9px 10px;
     font: inherit;
     color: var(--text);
-    background: transparent;
+    background: var(--card);
     border: 1px solid var(--border);
     border-radius: 8px;
+  }
+  /* Chrome on Windows renders the native <select> popup with its own
+     background; unstyled <option>s also fall back to system text color,
+     which clashes with the theme (light grey on white in dark mode). */
+  option {
+    color: var(--text);
+    background-color: var(--card);
   }
   input:focus, select:focus {
     outline: none;
