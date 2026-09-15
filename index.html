@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Time Zone to UTC Converter</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f4f4f6;
+    --card: #ffffff;
+    --text: #1b1b1f;
+    --muted: #6b6b76;
+    --border: #d8d8de;
+    --accent: #2f6fed;
+    --result: #0e5c3f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141417;
+      --card: #1f1f24;
+      --text: #ececf1;
+      --muted: #9c9ca8;
+      --border: #3a3a42;
+      --accent: #6b9bff;
+      --result: #7fd6a8;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 48px 16px;
+  }
+  main { width: 100%; max-width: 560px; }
+  h1 { font-size: 1.35rem; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); margin: 0 0 24px; font-size: .92rem; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  label {
+    display: block;
+    font-size: .8rem;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  input, select {
+    width: 100%;
+    padding: 9px 10px;
+    font: inherit;
+    color: var(--text);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  input:focus, select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  .full { grid-column: 1 / -1; }
+  #result {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    text-align: center;
+  }
+  #result[hidden] { display: none; }
+  #result .utc {
+    font-size: 2rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--result);
+    margin: 0;
+  }
+  #result .date { color: var(--muted); margin: 2px 0 8px; }
+  #result .offset { font-size: .85rem; color: var(--muted); }
+  #note { margin-top: 14px; font-size: .85rem; color: #b35900; min-height: 1.2em; }
+  @media (prefers-color-scheme: dark) { #note { color: #e0a458; } }
+  footer { margin-top: 20px; font-size: .8rem; color: var(--muted); }
+  footer code { font-family: ui-monospace, monospace; font-size: .95em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Time Zone &rarr; UTC Converter</h1>
+  <p class="subtitle">Enter a local time and any time zone — daylight saving time is handled automatically.</p>
+
+  <div class="card">
+    <div class="grid">
+      <div>
+        <label for="date">Date</label>
+        <input type="date" id="date">
+      </div>
+      <div>
+        <label for="time">Time</label>
+        <input type="time" id="time" step="1">
+      </div>
+      <div class="full">
+        <label for="tz">Time zone</label>
+        <select id="tz" size="1"></select>
+      </div>
+    </div>
+
+    <div id="result" hidden>
+      <p class="utc" id="utcTime"></p>
+      <p class="date" id="utcDate"></p>
+      <p class="offset" id="offset"></p>
+    </div>
+    <p id="note"></p>
+  </div>
+
+  <footer>
+    Conversions use your device's IANA time zone database (via <code>Intl</code>), so rules change
+    automatically — if Washington (or anywhere else) changes its daylight saving rules, this page
+    stays accurate as long as your OS/browser updates.
+  </footer>
+</main>
+
+<script>
+"use strict";
+
+const tzSelect = document.getElementById("tz");
+const dateInput = document.getElementById("date");
+const timeInput = document.getElementById("time");
+const resultEl = document.getElementById("result");
+const utcTimeEl = document.getElementById("utcTime");
+const utcDateEl = document.getElementById("utcDate");
+const offsetEl = document.getElementById("offset");
+const noteEl = document.getElementById("note");
+
+// --- Time zone dropdown -----------------------------------------------
+
+const POPULAR = [
+  "America/Los_Angeles", "America/Denver", "America/Chicago", "America/New_York",
+  "America/Sao_Paulo", "Europe/London", "Europe/Paris", "Europe/Berlin",
+  "Europe/Moscow", "Asia/Tokyo", "Asia/Shanghai", "Asia/Kolkata",
+  "Asia/Singapore", "Australia/Sydney", "Pacific/Auckland", "UTC",
+];
+
+function populateTimeZones() {
+  let zones;
+  if (typeof Intl.supportedValuesOf === "function") {
+    zones = Intl.supportedValuesOf("timeZone").filter(t => t !== "UTC");
+  } else {
+    // Older browsers: a small curated fallback list.
+    zones = POPULAR.slice();
+  }
+  zones.sort((a, b) => a.localeCompare(b));
+  const popular = POPULARfilterAvailable(zones);
+  for (const z of popular) addOption(z, "popular");
+  addOption("popular-sep", null);
+  for (const z of zones) addOption(z, null);
+}
+
+function POPULARfilterAvailable(zones) {
+  const set = new Set(zones);
+  return POPULAR.filter(z => set.has(z));
+}
+
+function addOption(value, group) {
+  if (group === null) {
+    const sep = document.createElement("option");
+    sep.disabled = true;
+    sep.hidden = true;
+    tzSelect.appendChild(sep);
+    return;
+  }
+  const opt = document.createElement("option");
+  opt.value = value;
+  opt.textContent = value;
+  tzSelect.appendChild(opt);
+}
+
+// --- Core conversion ----------------------------------------------------
+// Returns the zone's wall-clock time as a "UTC-ish" timestamp:
+// Date.UTC(y, m, d, h, min, s) built from what the clock reads in `tz` at `ts`.
+function zoneWallTime(tz, ts) {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hourCycle: "h23", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  const p = {};
+  for (const part of fmt.formatToParts(new Date(ts))) p[part.type] = part.value;
+  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+}
+
+// Invert zoneWallTime: find the UTC timestamp whose wall clock in `tz`
+// reads exactly `wallUtc` (a Date.UTC value). Iterates 2–3 times to be
+// correct across DST transitions.
+function zoneWallToUTC(tz, wallUtc) {
+  let guess = wallUtc;
+  for (let i = 0; i < 4; i++) {
+    const offset = zoneWallTime(tz, guess) - guess;
+    const next = wallUtc - offset;
+    if (next === guess) break;
+    guess = next;
+  }
+  return guess;
+}
+
+// --- UI -----------------------------------------------------------------
+
+function pad(n) { return String(n).padStart(2, "0"); }
+
+function convert() {
+  const tz = tzSelect.value;
+  const d = dateInput.value;        // "YYYY-MM-DD"
+  const t = timeInput.value;        // "HH:MM" or "HH:MM:SS"
+  noteEl.textContent = "";
+
+  if (!tz || !d || !t) { hideResult(); return; }
+
+  let fmt;
+  try {
+    fmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "short" });
+  } catch {
+    noteEl.textContent = `Unknown time zone "${tz}". Type one from the IANA list (e.g. America/Los_Angeles).`;
+    hideResult();
+    return;
+  }
+
+  const [year, month, day] = d.split("-").map(Number);
+  const [hh, mm, ss] = t.includes(":") && t.split(":").length === 3
+    ? t.split(":").map(Number)
+    : [...t.split(":").map(Number), 0];
+  const wallUtc = Date.UTC(year, month - 1, day, hh, mm, ss);
+
+  const utcTs = zoneWallToUTC(tz, wallUtc);
+
+  // Round-trip check: does this wall time actually exist in the zone?
+  const renderedWall = zoneWallTime(tz, utcTs);
+
+  // Zone offset + abbreviation at the resolved instant.
+  const offsetMs = zoneWallTime(tz, utcTs) - utcTs;
+  const hours = Math.trunc(offsetMs / 3600000);
+  const mins = Math.abs(offsetMs / 60000) % 60;
+  const sign = offsetMs >= 0 ? "+" : "-";
+  const parts = Object.fromEntries(fmt.formatToParts(new Date(utcTs)).map(p => [p.type, p.value]));
+
+  const u = new Date(utcTs);
+  utcTimeEl.textContent = `${pad(u.getUTCHours())}:${pad(u.getUTCMinutes())}:${pad(u.getUTCSeconds())} UTC`;
+  utcDateEl.textContent = u.toLocaleDateString("en-US", {
+    timeZone: "UTC", weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
+  const tzName = (parts.timeZoneName || "").replace(/^[A-Z]{3,4}\s*$/, m => m);
+  offsetEl.textContent = `${tz} was ${"UTC" + sign + Math.abs(hours) + (mins ? ":" + pad(mins) : "")} (${tzName.trim() || "standard time"}) at that moment.`;
+
+  resultEl.hidden = false;
+
+  if (renderedWall !== wallUtc) {
+    // Spring-forward gap: the clock skips over this wall time.
+    noteEl.textContent =
+      "Note: this exact time does not exist in " + tz +
+      " (a daylight saving clock spring-forward). Shown is the closest equivalent UTC instant.";
+  } else {
+    // Ambiguous fall-back hour: two UTC instants share the same wall time;
+    // the earlier one was chosen.
+    const utcTs2 = utcTs + 3600000;
+    if (zoneWallTime(tz, utcTs2) === wallUtc) {
+      noteEl.textContent =
+        "Note: this time occurred twice in " + tz +
+        " (a daylight saving fall-back). Shown is the first occurrence.";
+    }
+  }
+}
+
+function hideResult() {
+  resultEl.hidden = true;
+  utcTimeEl.textContent = "";
+  utcDateEl.textContent = "";
+  offsetEl.textContent = "";
+}
+
+// --- Init ----------------------------------------------------------------
+
+populateTimeZones();
+tzSelect.value = "America/Los_Angeles"; // default: Pacific time
+
+// Default to now (local), so the first render is immediately useful.
+const now = new Date();
+dateInput.value = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+timeInput.value = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
+dateInput.addEventListener("input", convert);
+timeInput.addEventListener("input", convert);
+tzSelect.addEventListener("change", convert);
+
+convert();
+</script>
+</body>
+</html>
