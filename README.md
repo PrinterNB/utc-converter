@@ -37,11 +37,3 @@ python -m http.server 8000
 2. Invert that with a few fixed-point iterations to find the UTC timestamp whose
    wall clock in the target zone matches the entered time — iterating enough
    times to be correct across DST transitions.
-this
-is
-a
-test
-for
-a
-counter
-thing
